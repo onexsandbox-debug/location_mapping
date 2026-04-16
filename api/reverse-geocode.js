@@ -1,5 +1,4 @@
 export default async function handler(req, res) {
-  // ✅ CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -17,22 +16,18 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "lat and lng are required" });
     }
 
-    // 🌍 STEP 1: Reverse Geocode (Force English first)
-    const geoUrl = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=en`;
-
-    const geoRes = await fetch(geoUrl, {
-      headers: { "User-Agent": "vercel-app" }
-    });
+    // 🌍 Reverse Geocode (NO language filter now)
+    const geoRes = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+      { headers: { "User-Agent": "vercel-app" } }
+    );
 
     const geoData = await geoRes.json();
     const addr = geoData.address || {};
 
-    // 🔍 Detect Arabic
-    const isArabic = (text) => /[\u0600-\u06FF]/.test(text);
-
-    // 🌐 RapidAPI Translate Function
+    // 🚀 YOUR RapidAPI Translation Function (FORCED)
     const translateText = async (text) => {
-      if (!text || !isArabic(text)) return text;
+      if (!text) return text;
 
       try {
         const response = await fetch(
@@ -54,15 +49,17 @@ export default async function handler(req, res) {
 
         const data = await response.json();
 
+        console.log("🔥 Translation API HIT:", text);
+
         return data?.data?.translations?.translatedText || text;
 
       } catch (error) {
-        console.log("⚠️ Translation failed:", error.message);
-        return text; // fallback
+        console.log("❌ Translation failed:", error.message);
+        return text;
       }
     };
 
-    // 🚀 Translate ALL fields (only if needed)
+    // ✅ FORCE translation on all relevant fields
     const address = await translateText(geoData.display_name);
     const neighbourhood = await translateText(addr.neighbourhood);
     const suburb = await translateText(addr.suburb);
@@ -70,7 +67,6 @@ export default async function handler(req, res) {
     const state = await translateText(addr.state);
     const country = await translateText(addr.country);
 
-    // ✅ Final Flattened Response
     const response = {
       success: true,
       address,
