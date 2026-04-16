@@ -1,12 +1,9 @@
 export default async function handler(req, res) {
-  // ✅ CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
+  if (req.method === "OPTIONS") return res.status(200).end();
 
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -19,57 +16,57 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "lat and lng are required" });
     }
 
-    // 🌍 STEP 1: Reverse Geocoding
-    const geoUrl = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`;
-
-    const geoRes = await fetch(geoUrl, {
-      headers: { "User-Agent": "vercel-app" }
-    });
+    // 🌍 Reverse Geocode
+    const geoRes = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+      { headers: { "User-Agent": "vercel-app" } }
+    );
 
     const geoData = await geoRes.json();
+    const addr = geoData.address || {};
 
-    let address = geoData.display_name || "";
+    // 🔍 Detect Arabic
+    const isArabic = (text) => /[\u0600-\u06FF]/.test(text);
 
-    // 🌐 STEP 2: Detect Arabic
-    const isArabic = /[\u0600-\u06FF]/.test(address);
+    // 🌐 Generic Translate Function (SAFE)
+    const translateText = async (text) => {
+      if (!text || !isArabic(text)) return text;
 
-    let translatedAddress = address;
-
-    // 🌍 STEP 3: Translate (SAFE)
-    if (isArabic && address) {
       try {
-        const translateRes = await fetch("https://libretranslate.de/translate", {
+        const res = await fetch("https://libretranslate.de/translate", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            q: address,
+            q: text,
             source: "ar",
             target: "en",
             format: "text"
           })
         });
 
-        const textResponse = await translateRes.text();
+        const raw = await res.text();
 
         try {
-          const translateData = JSON.parse(textResponse);
-          if (translateData.translatedText) {
-            translatedAddress = translateData.translatedText;
-          }
-        } catch (err) {
-          console.log("⚠️ Translation parse failed, fallback used");
+          const parsed = JSON.parse(raw);
+          return parsed.translatedText || text;
+        } catch {
+          return text;
         }
-
-      } catch (err) {
-        console.log("⚠️ Translation API failed, fallback used");
+      } catch {
+        return text;
       }
-    }
+    };
 
-    // 🧠 STEP 4: Flatten Response
-    const addr = geoData.address || {};
+    // 🚀 Translate ALL fields
+    const translatedAddress = await translateText(geoData.display_name);
 
+    const neighbourhood = await translateText(addr.neighbourhood);
+    const suburb = await translateText(addr.suburb);
+    const city = await translateText(addr.city);
+    const state = await translateText(addr.state);
+    const country = await translateText(addr.country);
+
+    // ✅ Final Flattened Response
     const response = {
       success: true,
       address: translatedAddress,
@@ -88,11 +85,11 @@ export default async function handler(req, res) {
       name: geoData.name,
       display_name: translatedAddress,
 
-      neighbourhood: addr.neighbourhood,
-      suburb: addr.suburb,
-      city: addr.city,
-      state: addr.state,
-      country: addr.country,
+      neighbourhood,
+      suburb,
+      city,
+      state,
+      country,
       country_code: addr.country_code,
       iso_code: addr["ISO3166-2-lvl4"],
 
