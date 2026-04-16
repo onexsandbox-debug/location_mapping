@@ -1,4 +1,5 @@
 export default async function handler(req, res) {
+  // ✅ CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -16,11 +17,12 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "lat and lng are required" });
     }
 
-    // 🌍 Reverse Geocode
-    const geoRes = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
-      { headers: { "User-Agent": "vercel-app" } }
-    );
+    // 🌍 STEP 1: Reverse Geocode (Force English first)
+    const geoUrl = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=en`;
+
+    const geoRes = await fetch(geoUrl, {
+      headers: { "User-Agent": "vercel-app" }
+    });
 
     const geoData = await geoRes.json();
     const addr = geoData.address || {};
@@ -28,38 +30,40 @@ export default async function handler(req, res) {
     // 🔍 Detect Arabic
     const isArabic = (text) => /[\u0600-\u06FF]/.test(text);
 
-    // 🌐 Generic Translate Function (SAFE)
+    // 🌐 RapidAPI Translate Function
     const translateText = async (text) => {
       if (!text || !isArabic(text)) return text;
 
       try {
-        const res = await fetch("https://libretranslate.de/translate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            q: text,
-            source: "ar",
-            target: "en",
-            format: "text"
-          })
-        });
+        const response = await fetch(
+          "https://deep-translate1.p.rapidapi.com/language/translate/v2",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-rapidapi-host": "deep-translate1.p.rapidapi.com",
+              "x-rapidapi-key": process.env.RAPID_API_KEY
+            },
+            body: JSON.stringify({
+              q: text,
+              source: "ar",
+              target: "en"
+            })
+          }
+        );
 
-        const raw = await res.text();
+        const data = await response.json();
 
-        try {
-          const parsed = JSON.parse(raw);
-          return parsed.translatedText || text;
-        } catch {
-          return text;
-        }
-      } catch {
-        return text;
+        return data?.data?.translations?.translatedText || text;
+
+      } catch (error) {
+        console.log("⚠️ Translation failed:", error.message);
+        return text; // fallback
       }
     };
 
-    // 🚀 Translate ALL fields
-    const translatedAddress = await translateText(geoData.display_name);
-
+    // 🚀 Translate ALL fields (only if needed)
+    const address = await translateText(geoData.display_name);
     const neighbourhood = await translateText(addr.neighbourhood);
     const suburb = await translateText(addr.suburb);
     const city = await translateText(addr.city);
@@ -69,7 +73,7 @@ export default async function handler(req, res) {
     // ✅ Final Flattened Response
     const response = {
       success: true,
-      address: translatedAddress,
+      address,
 
       place_id: geoData.place_id,
       licence: geoData.licence,
@@ -83,7 +87,7 @@ export default async function handler(req, res) {
       importance: geoData.importance,
       addresstype: geoData.addresstype,
       name: geoData.name,
-      display_name: translatedAddress,
+      display_name: address,
 
       neighbourhood,
       suburb,
