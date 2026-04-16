@@ -1,4 +1,5 @@
 export default async function handler(req, res) {
+  // ✅ CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -18,7 +19,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "lat and lng are required" });
     }
 
-    // 🌍 Step 1: Reverse Geocode
+    // 🌍 STEP 1: Reverse Geocoding
     const geoUrl = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`;
 
     const geoRes = await fetch(geoUrl, {
@@ -27,34 +28,48 @@ export default async function handler(req, res) {
 
     const geoData = await geoRes.json();
 
-    let address = geoData.display_name;
+    let address = geoData.display_name || "";
 
-    // 🌐 Step 2: Detect Arabic
+    // 🌐 STEP 2: Detect Arabic
     const isArabic = /[\u0600-\u06FF]/.test(address);
+
     let translatedAddress = address;
 
-    // 🌍 Step 3: Translate (if Arabic)
-    if (isArabic) {
-      const translateRes = await fetch("https://libretranslate.de/translate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          q: address,
-          source: "ar",
-          target: "en",
-          format: "text"
-        })
-      });
+    // 🌍 STEP 3: Translate (SAFE)
+    if (isArabic && address) {
+      try {
+        const translateRes = await fetch("https://libretranslate.de/translate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            q: address,
+            source: "ar",
+            target: "en",
+            format: "text"
+          })
+        });
 
-      const translateData = await translateRes.json();
-      translatedAddress = translateData.translatedText;
+        const textResponse = await translateRes.text();
+
+        try {
+          const translateData = JSON.parse(textResponse);
+          if (translateData.translatedText) {
+            translatedAddress = translateData.translatedText;
+          }
+        } catch (err) {
+          console.log("⚠️ Translation parse failed, fallback used");
+        }
+
+      } catch (err) {
+        console.log("⚠️ Translation API failed, fallback used");
+      }
     }
 
+    // 🧠 STEP 4: Flatten Response
     const addr = geoData.address || {};
 
-    // 🧠 Step 4: Flatten response
     const response = {
       success: true,
       address: translatedAddress,
