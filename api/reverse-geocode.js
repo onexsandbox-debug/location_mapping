@@ -16,7 +16,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "lat and lng are required" });
     }
 
-    // 🌍 Reverse Geocode (NO language filter now)
+    // 🌍 Reverse Geocode
     const geoRes = await fetch(
       `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
       { headers: { "User-Agent": "vercel-app" } }
@@ -25,7 +25,13 @@ export default async function handler(req, res) {
     const geoData = await geoRes.json();
     const addr = geoData.address || {};
 
-    // 🚀 YOUR RapidAPI Translation Function (FORCED)
+    // ✅ Normalize function (ARRAY → STRING)
+    const normalize = (val) => {
+      if (Array.isArray(val)) return val[0];
+      return val;
+    };
+
+    // 🌐 Translation function (FORCED + NORMALIZED)
     const translateText = async (text) => {
       if (!text) return text;
 
@@ -49,24 +55,25 @@ export default async function handler(req, res) {
 
         const data = await response.json();
 
-        console.log("🔥 Translation API HIT:", text);
+        let translated = data?.data?.translations?.translatedText;
 
-        return data?.data?.translations?.translatedText || text;
+        return normalize(translated) || text;
 
       } catch (error) {
-        console.log("❌ Translation failed:", error.message);
+        console.log("Translation failed:", error.message);
         return text;
       }
     };
 
-    // ✅ FORCE translation on all relevant fields
-    const address = await translateText(geoData.display_name);
-    const neighbourhood = await translateText(addr.neighbourhood);
-    const suburb = await translateText(addr.suburb);
-    const city = await translateText(addr.city);
-    const state = await translateText(addr.state);
-    const country = await translateText(addr.country);
+    // 🚀 Translate fields
+    const address = normalize(await translateText(geoData.display_name));
+    const neighbourhood = normalize(await translateText(addr.neighbourhood));
+    const suburb = normalize(await translateText(addr.suburb));
+    const city = normalize(await translateText(addr.city));
+    const state = normalize(await translateText(addr.state));
+    const country = normalize(await translateText(addr.country));
 
+    // ✅ FINAL RESPONSE (NO ARRAYS)
     const response = {
       success: true,
       address,
